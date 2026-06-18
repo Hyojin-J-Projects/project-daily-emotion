@@ -1,0 +1,62 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# 1. 파이썬 가상환경 및 캐시 (가장 무거움)
+/venv/
+**/__pycache__/
+
+# 2. 대용량 AI 데이터셋 및 이미지 폴더
+/backup/
+/image/
+/models/
+
+# 3. 예전 웹 프로젝트 잔재 (라이브러리 수만 개 포함되어 있음)
+/node_modules/
+package-lock.json
+
+# 4. 보안 설정 파일 (Supabase 키 유출 방지)
+*.env
+.env

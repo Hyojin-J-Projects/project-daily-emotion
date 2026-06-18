@@ -1,0 +1,31 @@
+name: diary_app
+description: "A new Flutter project."
+
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+
+dependencies:
+  flutter:
+    sdk: flutter
+  supabase_flutter: ^2.8.0
+  cupertino_icons: ^1.0.8
+  fl_chart: ^1.2.0
+  http: ^1.2.0
+  image_picker: ^1.2.2
+  http_parser: ^4.0.0      # 👈 웹 환경 멀티파트 파일 이미지 전송을 위한 미디어타입 지정 필수 패키지
+  table_calendar: ^3.2.0   # 👈 실시간 하루 감정 통합 스탬프를 찍기 위한 달력 컴포넌트 패키지
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
