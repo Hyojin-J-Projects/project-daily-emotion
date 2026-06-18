@@ -32,23 +32,26 @@ $$\text{Share}_{i} = (100 - V_{new}) \times \frac{\text{Current Value}_{i}}{\tex
 
 프로젝트는 FastAPI 백엔드 서버와 Flutter 프론트엔드 앱의 2-Tier 아키텍처로 구성되어 있으며, 단 두 개의 메인 스크립트 파일로 핵심 비즈니스 로직을 격리하여 관리합니다.
 
-├── (Project Root)               # FastAPI 백엔드가 가동되는 기본 루트 경로
-│   ├── main.py                  # 🧠 FastAPI 백엔드 멀티모달 서버 스크립트
-│   ├── requirements.txt         # 🐍 백엔드 파이썬 의존성 패키지 리스트
-│   │
-│   ├── models/                  # 📂 AI 모델 저장 폴더
-│   │   └── my_emotion_model/    # Fine-Tuning 완료된 BERT 감정 분석 가중치 파일들
-│   │
-│   ├── diary_app/               # 📂 Flutter 프론트엔드 전용 독립 프로젝트 폴더
-│   │   ├── lib/                 # 📱 플러터 소스코드 디렉토리
-│   │   │   ├── main.dart        # ⚡ 가동 UI, 상태 관리 및 합산 100% 동적 슬라이더 핸들러
-│   │   │   └── emotion_dashboard.dart
-│   │   └── pubspec.yaml         # 📦 플러터 패키지 의존성 관리 파일
-│   │
-│   ├── data/                    # 데이터셋 관리 폴더
-│   ├── venv/                    # 파이썬 가상환경 디렉토리
-│   ├── README.md                # 📑 프로젝트 메인 가이드 문서
-│   └── text_train.py / text_evaluate_model.py  # 🧪 모델 학습 및 평가 검증 스크립트
+D:\project\ (Project Root)
+├── main.py                          # 🧠 FastAPI 백엔드 멀티모달 서버 핵심 스크립트
+├── requirements.txt                 # 🐍 백엔드 파이썬 의존성 패키지 리스트
+├── text_train.py                    # 🧪 AI 모델 학습 스크립트
+├── text_evaluate_model.py           # 🧪 AI 모델 평가 및 검증 스크립트
+├── .gitignore                       # 🚫 깃허브 업로드 제외 규칙 설정 파일
+├── README.md                        # 📑 프로젝트 메인 가이드 문서
+│
+├── models/                          # 📂 AI 모델 저장 폴더 (GitHub 제외)
+│   └── my_emotion_model/            # 🎯 Fine-Tuning 완료된 BERT 감정 분석 가중치 파일들
+│
+├── diary_app/                       # 📂 Flutter 프론트엔드 전용 독립 프로젝트 폴더
+│   ├── pubspec.yaml                 # 📦 플러터 패키지 및 에셋 의존성 관리 파일
+│   └── lib/                         # 📱 플러터 소스코드 디렉토리
+│       ├── main.dart                # ⚡ 가동 UI 및 상태 관리, 100% 동적 슬라이더 핸들러
+│       └── emotion_dashboard.dart   # 📊 감정 통계 및 대시보드 화면 UI
+│
+├── data/                            # 📂 AI 학습용 데이터셋 관리 폴더
+├── backup/                          # 📂 원본 백업 데이터 폴더 (GitHub 제외)
+└── venv/                            # 📂 파이썬 가상환경 디렉토리 (GitHub 제외)
 
 💻 시작하기 (Getting Started)
 Prerequisites

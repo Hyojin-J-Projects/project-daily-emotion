@@ -1,0 +1,10 @@
+__pycache__/
+.vscode/
+backup/
+node_modules/
+venv/
+image/
+models/
+package-lock.json
+package.json
+vite.config.ts
