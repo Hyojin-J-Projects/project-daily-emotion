@@ -52,8 +52,11 @@ clip_model = None
 def load_models():
     global tokenizer, text_model, clip_processor, clip_model
     print("🚀 [FastAPI] 감성 분석 멀티모달 엔진 로드 시작...")
-    tokenizer = AutoTokenizer.from_pretrained("./models/my_emotion_model")
-    text_model = TFAutoModelForSequenceClassification.from_pretrained("./models/my_emotion_model")
+    
+    # 🌟 로컬 경로 대신 허깅페이스 저장소 주소로 100% 싱크 연동!
+    tokenizer = AutoTokenizer.from_pretrained("Erinjj/my-emotion-model")
+    text_model = TFAutoModelForSequenceClassification.from_pretrained("Erinjj/my-emotion-model")
+    
     clip_model = TFCLIPModel.from_pretrained("openai/clip-vit-base-patch32")
     clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     print("🎉 [FastAPI] 작동 코드와 100% 동기화된 모든 AI 모델 상주 완료!")
