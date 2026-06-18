@@ -22,7 +22,6 @@ app.add_middleware(
 )
 
 # 🎯 감정 매핑 레이블 테이블 (작동 코드의 LABEL_NAMES 정렬 순서 고정 매칭)
-# 인덱스 순서 규칙: 0:Anger(분노), 1:Anxiety(불안), 2:Disgust(상처), 3:Joy(기쁨), 4:Other(일상), 5:Sad(슬픔), 6:Surprise(놀람)
 KOREAN_LABELS = ['분노', '불안', '상처', '기쁨', '일상', '슬픔', '놀람']
 
 # 📸 CLIP용 프롬프트 및 매핑 스펙
@@ -53,11 +52,21 @@ def load_models():
     global tokenizer, text_model, clip_processor, clip_model
     print("🚀 [FastAPI] 감성 분석 멀티모달 엔진 로드 시작...")
     
-    # 🌟 로컬 경로 대신 허깅페이스 저장소 주소로 100% 싱크 연동!
+    # 1. 토크나이저 로드
     tokenizer = AutoTokenizer.from_pretrained("Erinjj/my-emotion-model")
-    text_model = TFAutoModelForSequenceClassification.from_pretrained("Erinjj/my-emotion-model")
     
-    clip_model = TFCLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+    # 🌟 [치명적 초경량화 옵션 주입] 
+    # low_cpu_mem_usage=True를 통해 Render 프리티어 메모리 터짐(Out of Memory) 현상을 방어합니다.
+    text_model = TFAutoModelForSequenceClassification.from_pretrained(
+        "Erinjj/my-emotion-model",
+        low_cpu_mem_usage=True
+    )
+    
+    # CLIP 모델도 저사양 메모리 세이프 모드로 로드
+    clip_model = TFCLIPModel.from_pretrained(
+        "openai/clip-vit-base-patch32",
+        low_cpu_mem_usage=True
+    )
     clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     print("🎉 [FastAPI] 작동 코드와 100% 동기화된 모든 AI 모델 상주 완료!")
 
@@ -74,23 +83,18 @@ async def analyze_diary(
         if not content and not image:
             return {"일상": 100.0, "분노": 0.0, "불안": 0.0, "상처": 0.0, "기쁨": 0.0, "슬픔": 0.0, "놀람": 0.0}
 
-        # 결과 저장 구조 선언
         flutter_formatted_results = {"분노": 0.0, "불안": 0.0, "상처": 0.0, "기쁨": 0.0, "슬픔": 0.0, "놀람": 0.0, "일상": 0.0}
         text_probs_dict = {"분노": 0.0, "불안": 0.0, "상처": 0.0, "기쁨": 0.0, "슬픔": 0.0, "놀람": 0.0, "일상": 0.0}
         image_probs_dict = {}
 
-        # 1. 📝 일기 글(content) BERT 가동 부위 (제공해주신 추적 작동 코드 로직 100% 구현)
+        # 1. 📝 일기 글(content) BERT 가동 부위
         if content and str(content).strip() and str(content) != "null":
             raw_memo = str(content).strip()
             
-            # [방어 로직] 3글자 미만은 일상(Other) 처리
             if len(raw_memo) < 3:
                 text_probs_dict["일상"] = 1.0
             else:
-                # [템플릿 싱크] 학습/추론 때와 동일한 빈 컨텍스트 문맥 구조 주입
                 inference_text = f"사용자: {raw_memo} 시스템:  사용자: "
-                
-                # 전처리 토크나이징 (MAX_LEN=128)
                 encodings = tokenizer(
                     inference_text, 
                     padding='max_length', 
@@ -99,17 +103,13 @@ async def analyze_diary(
                     return_tensors='tf'
                 )
                 
-                # 모델 예측 
                 outputs = text_model(
                     input_ids=tf.cast(encodings['input_ids'], tf.int32), 
                     attention_mask=tf.cast(encodings['attention_mask'], tf.int32)
                 )
                 logits = outputs.logits
-                
-                # 💡 [치명적 버그 수정 부위]: 작동 코드와 완벽히 동일하게 [0]을 통해 1차원 확률 배열화 가동!
                 raw_text_probs = tf.nn.softmax(logits, axis=-1).numpy()[0]
                 
-                # 제공해주신 고유 감정 규칙 순서대로 한글 데이터 주머니 매핑 (배열 누락 차단)
                 for idx, prob in enumerate(raw_text_probs[:7]):
                     korean_key = KOREAN_LABELS[idx]
                     text_probs_dict[korean_key] = float(prob)
@@ -158,18 +158,18 @@ async def analyze_diary(
         if has_text and len(raw_memo) >= 3:
             text_sorted = sorted([(k, v * 100) for k, v in text_probs_dict.items()], key=lambda x: x[1], reverse=True)
             text_items = [f"'{k}': '{v:.1f}%'" for k, v in text_sorted]
-            print(f"📝 [1. BERT 작동 코드 동기화형 텍스트 분석 수치]:\n   -> {{ {', '.join(text_items)} }}")
+            print(f"📝 [1. BERT 텍스트 분석 수치]:\n   -> {{ {', '.join(text_items)} }}")
         elif has_text:
-            print("📝 [1. BERT 작동 코드 동기화형 텍스트 분석 수치]: 3글자 미만 강제 중립 스킵 처리")
+            print("📝 [1. BERT 텍스트 분석 수치]: 3글자 미만 강제 중립 스킵 처리")
         else:
-            print("📝 [1. BERT 작동 코드 동기화형 텍스트 분석 수치]: 입력 글 없음")
+            print("📝 [1. BERT 텍스트 분석 수치]: 입력 글 없음")
             
         if has_image:
             image_sorted = sorted([(k, v * 100) for k, v in image_probs_dict.items()], key=lambda x: x[1], reverse=True)
             image_items = [f"'{k}': '{v:.1f}%'" for k, v in image_sorted]
-            print(f"📸 [2. CLIP 오리지널 이미지 분석 수치]:\n   -> {{ {', '.join(image_items)} }}")
+            print(f"📸 [2. CLIP 이미지 분석 수치]:\n   -> {{ {', '.join(image_items)} }}")
         else:
-            print("📸 [2. CLIP 오리지널 이미지 분석 수치]: 입력 사진 없음")
+            print("📸 [2. CLIP 이미지 분석 수치]: 입력 사진 없음")
             
         print("-"*60)
         fusion_sorted = sorted(flutter_formatted_results.items(), key=lambda x: x[1], reverse=True)
