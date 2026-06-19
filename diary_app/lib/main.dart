@@ -7,7 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // 👈 Supabase 패키지 임포트
+import 'package:supabase_flutter/supabase_flutter.dart'; 
+import 'login_screen.dart';
 
 // 🔒 [보안 가이드]: 본인의 Supabase 고유 주소와 Anon Public 토큰 키를 대입하세요!
 String supabaseUrl = "";
@@ -67,7 +68,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFFFFDF6),
       ),
-      home: const HomeScreen(),
+      home: const LoginScreen(),
     );
   }
 }
@@ -96,6 +97,154 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, Map<String, double>> _dailyEmotionDatabase = {};
   final Map<String, String> _calendarEmojiMap = {};
 
+  Future<void> _handleLogout() async {
+    try {
+      // Supabase 서버 세션 종료
+      await Supabase.instance.client.auth.signOut();
+      
+      // 로그인 첫 화면으로 튕겨내기
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('로그아웃 실패: $e')),
+      );
+    }
+  }
+  Future<void> _fetchDiariesFromSupabase() async {
+    // 현재 로그인한 유저 고유 ID 가져오기
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      // 🌟 .eq('user_id', userId) 를 붙여서 '내 계정 일기만' 쏙 필터링합니다!
+      final response = await Supabase.instance.client
+          .from('diaries')
+          .select()
+          .eq('user_id', userId);
+
+      if (response != null && response is List) {
+        setState(() {
+          // 주머니 초기화 후 데이터 채워넣기
+          _dailyTimelineFeeds.clear();
+          _dailyEmotionDatabase.clear();
+          _calendarEmojiMap.clear();
+
+          for (var item in response) {
+            String dateStr = item['date'] ?? '';
+            if (dateStr.isEmpty) continue;
+
+            // 로컬 화면 주머니 데이터 구조에 맞게 매핑
+            _dailyTimelineFeeds[dateStr] = [
+              {
+                'text': item['content'] ?? '',
+                'emotion': item['emotion'] ?? '일상',
+                'image': item['image_url'], // 이미지 경로가 있다면 추가
+              }
+            ];
+
+          }
+        });
+      }
+    } catch (e) {
+      print('일기 불러오기 실패: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // 🔄 1단계 AI 분석 직후 백엔드로 실시간 자동 전송 + 로컬 화면 새로고침 엔진
+  Future<void> _recalculateDailyDatabase(String dateKey) async {
+    final client = Supabase.instance.client;
+    String? userId = client.auth.currentUser?.id ?? client.auth.currentSession?.user.id;
+
+    if (userId == null) {
+      print("⚠️ 세션이 만료되어 자동 디비 동기화가 차단되었습니다.");
+      return; 
+    }
+
+    List<Map<String, dynamic>> feeds = _dailyTimelineFeeds[dateKey] ?? [];
+    if (feeds.isEmpty) {
+      setState(() {
+        _dailyEmotionDatabase.remove(dateKey);
+        _calendarEmojiMap.remove(dateKey);
+      });
+      return;
+    }
+
+    // 1. 피드들의 전체 평점 및 평균 계산 데이터 정렬
+    double totalJoy = 0, totalSad = 0, totalAngry = 0, totalAnxious = 0, totalHurt = 0, totalSurprised = 0, totalNormal = 0;
+    int count = feeds.length;
+
+    for (var f in feeds) {
+      Map<String, dynamic> em = f["emotions"] ?? {};
+      totalJoy += (em["기쁨"] ?? 0.0);
+      totalSad += (em["슬픔"] ?? 0.0);
+      totalAngry += (em["분노"] ?? 0.0);
+      totalAnxious += (em["불안"] ?? 0.0);
+      totalHurt += (em["상처"] ?? 0.0);
+      totalSurprised += (em["놀람"] ?? 0.0);
+      totalNormal += (em["일상"] ?? 0.0);
+    }
+
+    Map<String, double> integratedEmotions = {
+      "기쁨": double.parse((totalJoy / count).toStringAsFixed(1)),
+      "슬픔": double.parse((totalSad / count).toStringAsFixed(1)),
+      "분노": double.parse((totalAngry / count).toStringAsFixed(1)),
+      "불안": double.parse((totalAnxious / count).toStringAsFixed(1)),
+      "상처": double.parse((totalHurt / count).toStringAsFixed(1)),
+      "놀람": double.parse((totalSurprised / count).toStringAsFixed(1)),
+      "일상": double.parse((totalNormal / count).toStringAsFixed(1)),
+    };
+
+    String highestEmotion = "일상";
+    double maxVal = -1.0;
+    integratedEmotions.forEach((k, v) {
+      if (v > maxVal) {
+        maxVal = v;
+        highestEmotion = k;
+      }
+    });
+
+    final latestFeed = feeds.first;
+    String idKey = latestFeed["id"] ?? DateTime.now().millisecondsSinceEpoch.toString();
+    String timeKey = latestFeed["time"] ?? "${TimeOfDay.now().period == DayPeriod.am ? '오전' : '오후'} ${TimeOfDay.now().format(context).split(' ')[0]}";
+
+    // 🌟 [추가] 계산된 평점 수치들을 그래프와 대시보드 변수들에 실시간 강제 새로고침(setState) 바인딩합니다.
+    setState(() {
+      _dailyEmotionDatabase[dateKey] = integratedEmotions;
+      _calendarEmojiMap[dateKey] = _emojiTable[highestEmotion]!;
+      
+      Map<String, double> latestEmotions = Map<String, double>.from(latestFeed["emotions"] ?? {});
+      latestEmotions.forEach((key, value) {
+        if (_editingSliders.containsKey(key)) _editingSliders[key] = value;
+        if (emotionMetrics.containsKey(key)) emotionMetrics[key]!['value'] = value;
+      });
+    });
+
+    try {
+      // 🚀 실제 디비 컬럼명 구조에 맞춰서 전송!
+      await client.from('diary_entries').upsert({
+        'id': idKey,
+        'user_id': userId,       
+        'text': latestFeed["text"] ?? "사진 AI 멀티모달 오리지널 분석 기록",
+        'emoji': _emojiTable[highestEmotion]!,
+        'diary_date': dateKey,
+        'diary_time': timeKey,
+        'emotions': integratedEmotions, 
+      });
+      
+      print("🎯 [성공] AI 분석 결과가 user_id($userId)와 함께 자동 업서트 및 화면 갱신 완료되었습니다.");
+    } catch (e) {
+      print("❌ 자동 마이그레이션 실패 로그: $e");
+    }
+  }
   String _dominantEmotion = "일상";
   String _dominantEmoji = "😐";
   double _dominantValue = 100.0;
@@ -142,12 +291,23 @@ class _HomeScreenState extends State<HomeScreen> {
     return "${date.year}년 ${date.month}월 ${date.day}일 ${weekdayStr}요일";
   }
 
-  // 📡 [Supabase 연동 핵심]: 원격 데이터베이스로부터 시계열 일기 피드 전건 동적 로드 엔진
+  // 📡 [Supabase 연동 핵심]: 원격 데이터베이스로부터 내 계정의 시계열 일기 피드만 동적 로드하는 엔진
   Future<void> _fetchDiaryEntriesFromSupabase() async {
     try {
+      // 🌟 [핵심 안전장치] 현재 로그인한 사용자의 진짜 고유 ID(UUID)를 가져옵니다.
+      final client = Supabase.instance.client;
+      String? userId = client.auth.currentUser?.id ?? client.auth.currentSession?.user.id;
+
+      if (userId == null) {
+        print("⚠️ 로그인 세션 정보가 없어 데이터를 불러오지 못했습니다.");
+        return;
+      }
+
+      // 🚀 [.eq('user_id', userId)] 조건을 추가하여 내 일기만 쏙 솎아내어 정렬합니다!
       final List<dynamic> response = await _supabase
           .from('diary_entries')
           .select()
+          .eq('user_id', userId) // 🟢 [데이터 복구 핵심 필터] 내 UUID와 일치하는 장부만 필터링!
           .order('created_at', ascending: false);
 
       setState(() {
@@ -163,7 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           // JSON 타입의 수치를 Map<String, double> 구조로 파싱 변환
-          Map<String, dynamic> rawEmotions = row['emotions'];
+          Map<String, dynamic> rawEmotions = row['emotions'] ?? {};
           Map<String, double> parsedEmotions = {};
           rawEmotions.forEach((k, v) => parsedEmotions[k] = (v as num).toDouble());
 
@@ -180,9 +340,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
         // 전체 데이터 주머니 순회하며 일일 합산 평균 통계 재계산 가동
         _dailyTimelineFeeds.keys.forEach((dateKey) {
-          _recalculateDailyDatabase(dateKey);
+          _recalculateDailyDatabase(dateKey); // 🌟 200번대에 살아있는 공용 계산 엔진 가동
         });
       });
+      
+      print("🎯 [동기화 성공] 클라우드에서 내 일기 피드 ${response.length}건을 정상 로드했습니다.");
     } catch (e) {
       print("⚠️ Supabase 데이터 초기 로드 실패: $e");
     }
@@ -293,7 +455,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 🤖 1단계: AI 분석 연산 가동
+  // 🤖 1단계: AI 분석 연산 가동 (기존 기능 100% 유지 + user_id 유실 방지)
   Future<void> _analyzeEmotionWithFastAPI() async {
     final text = _diaryController.text.trim();
     if (text.isEmpty && _selectedImage == null) {
@@ -301,14 +463,26 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    // 🌟 [추가] 안전하게 현재 로그인한 유저의 진짜 ID를 확보합니다.
+    final client = Supabase.instance.client;
+    String? userId = client.auth.currentUser?.id ?? client.auth.currentSession?.user.id;
+
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ 로그인 세션 정보가 없습니다. 다시 로그인 후 시도해 주세요!'), backgroundColor: Colors.red)
+      );
+      return;
+    }
+
     setState(() { _isLoading = true; });
 
     try {
-      final url = Uri.parse('http://127.0.0.1:8000/analyze/');
+      // 🌟 로컬 주소를 지우고 16GB RAM 허깅페이스 서버 주소로 완벽 교체!
+      final url = Uri.parse('https://erinjj-project-daily-emotion.hf.space/analyze/');
       final request = http.MultipartRequest('POST', url);
 
       if (text.isNotEmpty) {
-        request.fields['content'] = utf8.decode(utf8.encode(text));
+        request.fields['content'] = text;
       }
 
       Uint8List? imageBytes;
@@ -350,8 +524,10 @@ class _HomeScreenState extends State<HomeScreen> {
           final String feedId = DateTime.now().millisecondsSinceEpoch.toString();
           final String timeStr = "${DateTime.now().hour >= 12 ? '오후' : '오전'} ${(DateTime.now().hour % 12 == 0 ? 12 : DateTime.now().hour % 12).toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}";
           
+          // 🌟 로컬 메모리 데이터 구조에도 user_id 주입
           _dailyTimelineFeeds[targetKey]!.insert(0, {
             "id": feedId,
+            "user_id": userId, // 👈 [추가] 유저 식별 코드 장착!
             "time": timeStr,
             "text": text.isNotEmpty ? text : "사진 AI 멀티모달 오리지널 분석 기록",
             "emoji": _emojiTable[highest]!,
@@ -361,7 +537,7 @@ class _HomeScreenState extends State<HomeScreen> {
           });
 
           _editingFeedId = feedId; 
-          _recalculateDailyDatabase(targetKey);
+          _recalculateDailyDatabase(targetKey); // 👈 여기서 디비로 밀어 넣을 때 유저 아이디를 타고 가게 합니다.
         });
 
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🤖 AI 분석 완료! 슬라이더 조절 후 하단 저장 버튼을 누르면 DB로 실시간 최종 마이그레이션됩니다.')));
@@ -426,10 +602,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // 💾 [Supabase 연동 핵심]: 새로고침 방어형 원격 동기화 동적 원스톱 저장소 레일
+ // 💾 [Supabase 연동 핵심]: 새로고침 방어형 원격 동기화 동적 원스톱 저장소 레일 (user_id 주입 마스터 버전)
   void _saveManualAdjustment() async {
     String targetKey = _getDateKey(_selectedDay);
     if (_editingFeedId == null || !_dailyTimelineFeeds.containsKey(targetKey)) return;
+
+    // 🌟 [최종 방어선] 현재 로그인한 유저 세션에서 진짜 고유 ID(UUID)를 확실하게 추출합니다.
+    final client = Supabase.instance.client;
+    String? userId = client.auth.currentUser?.id ?? client.auth.currentSession?.user.id;
+
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ 로그인 세션 정보가 없습니다. 다시 로그인해 주세요!'), backgroundColor: Colors.red)
+      );
+      return;
+    }
 
     int index = _dailyTimelineFeeds[targetKey]!.indexWhere((f) => f["id"] == _editingFeedId);
     if (index == -1) return;
@@ -451,9 +638,10 @@ class _HomeScreenState extends State<HomeScreen> {
     var targetFeed = _dailyTimelineFeeds[targetKey]![index];
 
     try {
-      // 💡 Supabase의 강력한 'upsert' 연산 가동: 동일 ID 존재 시 수정(Update), 미존재 시 신규 추가(Insert)
+      // 💡 Supabase의 강력한 'upsert' 연산 가동: user_id를 누락 없이 꽉 채워 던집니다!
       await _supabase.from('diary_entries').upsert({
         'id': targetFeed['id'],
+        'user_id': userId,           // 🟢 [버그 완전 종결] 드디어 디비 빈칸에 진짜 내 UUID가 들어갑니다!
         'diary_date': targetKey,
         'diary_time': targetFeed['time'],
         'text': targetFeed['text'],
@@ -462,7 +650,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
 
       setState(() {
-        _recalculateDailyDatabase(targetKey);
+        _recalculateDailyDatabase(targetKey); // 🌟 동기화 연산 가동
         _diaryController.clear();
         _selectedImage = null;
         _editingFeedId = null;
@@ -479,34 +667,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _recalculateDailyDatabase(String dateKey) {
-    if (!_dailyTimelineFeeds.containsKey(dateKey) || _dailyTimelineFeeds[dateKey]!.isEmpty) {
-      _dailyEmotionDatabase.remove(dateKey);
-      _calendarEmojiMap.remove(dateKey);
-      return;
-    }
-
-    Map<String, double> aggregatedEmotions = {"분노": 0.0, "불안": 0.0, "상처": 0.0, "기쁨": 0.0, "슬픔": 0.0, "놀람": 0.0, "일상": 0.0};
-    
-    for (var feed in _dailyTimelineFeeds[dateKey]!) {
-      Map<String, double> feedEmotions = Map<String, double>.from(feed["emotions"]);
-      feedEmotions.forEach((key, value) {
-        aggregatedEmotions[key] = aggregatedEmotions[key]! + value;
-      });
-    }
-
-    int totalFeeds = _dailyTimelineFeeds[dateKey]!.length;
-    aggregatedEmotions.updateAll((key, value) => double.parse((value / totalFeeds).toStringAsFixed(1)));
-    _dailyEmotionDatabase[dateKey] = aggregatedEmotions;
-
-    String highest = "일상";
-    double maxVal = -1.0;
-    _dailyEmotionDatabase[dateKey]!.forEach((k, v) {
-      if (v > maxVal) { maxVal = v; highest = k; }
-    });
-    _calendarEmojiMap[dateKey] = _emojiTable[highest]!;
-  }
-
+ 
+  
   @override
   Widget build(BuildContext context) {
     var todayData = _calculateTodayIntegratedEmotion();
@@ -521,6 +683,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // 📝 상단 헤더 영역 (날짜, 타이틀, 로그아웃 버튼 정렬 완료)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Row(
@@ -534,15 +697,35 @@ class _HomeScreenState extends State<HomeScreen> {
                       const Text('감정 일기', style: TextStyle(color: Color(0xFF3C2612), fontSize: 28, fontWeight: FontWeight.w900)),
                     ],
                   ),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: const Icon(Icons.access_time_rounded, color: Color(0xFFDCA842), size: 24),
-                  )
+                  // 🚪 기획하신 부드러운 그림자가 깔린 로그아웃 버튼
+                  GestureDetector(
+                    onTap: _handleLogout,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 10,
+                            spreadRadius: 2,
+                            offset: const Offset(0, 2),
+                          )
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.logout_rounded,
+                        color: Color(0xFFDCA842),
+                        size: 24,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-
+            
+            // 탭 버튼 영역
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: Row(
@@ -557,6 +740,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
 
+            // 스크롤 가능한 메인 컨텐츠 영역
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -907,6 +1091,8 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('이번 주 주간 리포트 트랙', style: TextStyle(color: Color(0xFF451A03), fontSize: 15, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          const Text('※ 각 요일의 기둥은 당일 가장 강했던 대표 감정의 비중(%)입니다.', style: TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w600), ),
           const SizedBox(height: 24),
           SizedBox(
             height: 160,

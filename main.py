@@ -55,17 +55,12 @@ def load_models():
     # 1. 토크나이저 로드
     tokenizer = AutoTokenizer.from_pretrained("Erinjj/my-emotion-model")
     
-    # 🌟 [치명적 초경량화 옵션 주입] 
-    # low_cpu_mem_usage=True를 통해 Render 프리티어 메모리 터짐(Out of Memory) 현상을 방어합니다.
     text_model = TFAutoModelForSequenceClassification.from_pretrained(
-        "Erinjj/my-emotion-model",
-        low_cpu_mem_usage=True
+        "Erinjj/my-emotion-model"
     )
-    
     # CLIP 모델도 저사양 메모리 세이프 모드로 로드
     clip_model = TFCLIPModel.from_pretrained(
-        "openai/clip-vit-base-patch32",
-        low_cpu_mem_usage=True
+        "openai/clip-vit-base-patch32"
     )
     clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     print("🎉 [FastAPI] 작동 코드와 100% 동기화된 모든 AI 모델 상주 완료!")
