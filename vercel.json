@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "framework": null,
+  "functions": {},
+  "installCommand": "unzip -q flutter_linux_* -d /sandbox && export PATH=\"$PATH:/sandbox/flutter/bin\"",
+  "buildCommand": "flutter build web --release",
+  "outputDirectory": "build/web"
+}
