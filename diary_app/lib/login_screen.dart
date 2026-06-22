@@ -216,8 +216,18 @@ class _LoginScreenState extends State<LoginScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFFDCA842)),
-          onPressed: () => setState(() => _currentStep--),
-        ),
+          onPressed: () {
+             setState(() {
+              if (_currentStep == 3) {
+                // 🎯 로그인 화면(3)에서 뒤로 가기를 누르면 감정 설정으로 안 가고 '시작 화면(-1)'으로 다이렉트 복귀!
+                _currentStep = -1; 
+               } else {
+                  // 나머지 회원가입 단계(0, 1, 2)에서는 정상적으로 이전 단계로 이동
+                _currentStep--;
+              }   
+            });
+         },
+      ),
         title: const Text('뒤로', style: TextStyle(color: Color(0xFFDCA842), fontSize: 16)),
       ),
       body: SafeArea(
@@ -446,7 +456,17 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text('아직 계정이 없으신가요? '),
-            GestureDetector(onTap: () => setState(() => _currentStep = 0), child: const Text('회원가입', style: TextStyle(color: Color(0xFFDCA842), fontWeight: FontWeight.bold))),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  // 🎯 로그인 창에 입력했던 것들이 회원가입 창에 간섭하지 않도록 컨트롤러 청소!
+                  _emailController.clear();
+                  _passwordController.clear();
+                  _currentStep = 0; // 약관 동의 단계로 이동
+               });
+             },
+             child: const Text('회원가입', style: TextStyle(color: Color(0xFFDCA842), fontWeight: FontWeight.bold))
+            ),
           ],
         )
       ],

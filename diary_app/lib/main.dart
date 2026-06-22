@@ -806,19 +806,28 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(titleLabel, style: const TextStyle(color: Color(0xFF78350F), fontSize: 13, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  Text(_dominantEmotion, style: const TextStyle(color: Color(0xFF451A03), fontSize: 36, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 4),
-                  const Text('하루 모든 조절 데이터의 평균 결합값이 실시간 반영됩니다.', style: TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w600)),
-                ],
-              ),
-              Text(_dominantEmoji, style: const TextStyle(fontSize: 68)),
-            ],
-          ),
+              Expanded(
+                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(titleLabel, style: const TextStyle(color: Color(0xFF78350F), fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text(_dominantEmotion, style: const TextStyle(color: Color(0xFF451A03), fontSize: 36, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 4),
+                    const Text('하루 모든 조절 데이터의 평균 결합값이 실시간 반영됩니다.', style: TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w600)),
+                    // 💡 소프트랩(wrap)이 되도록 maxLines와 overflow 속성을 주면 모바일에서 안 깨집니다.
+                    const Text(
+                      '하루 모든 조절 데이터의 평균 결합값이 실시간 반영됩니다.', 
+                      style: TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w600),
+                      maxLines: 2,
+                    ),
+                 ],
+               ),
+             ),
+             const SizedBox(width: 12), // 텍스트와 이모티콘 사이 최소 간격 확보
+             Text(_dominantEmoji, style: const TextStyle(fontSize: 68)), // 🎯 이제 제자리를 지킵니다!
+           ],
+         ),  
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1062,15 +1071,25 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                         ),
-                        if (record["imageBytes"] != null || record["imagePath"] != null) ...[
+                        if (record["imageUrl"] != null || record["imageBytes"] != null || record["imagePath"] != null) ...[
                           const SizedBox(width: 10),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: kIsWeb 
-                              ? Image.memory(record["imageBytes"], width: 45, height: 45, fit: BoxFit.cover)
-                              : Image.file(File(record["imagePath"]), width: 45, height: 45, fit: BoxFit.cover),
-                          )
-                        ]
+                            child: () {
+                              // 1순위: Supabase DB에서 내려준 클라우드 이미지 주소가 있다면 네트워크 이미지로 출력!
+                              if (record["imageUrl"] != null && record["imageUrl"].toString().isNotEmpty) {
+                                return Image.network(record["imageUrl"], width: 45, height: 45, fit: BoxFit.cover);
+                                }
+                                // 2순위: 방금 분석 요청해서 서버에 올라가기 직전인 로컬 임시 데이터 출력
+                                if (kIsWeb && record["imageBytes"] != null) {
+                                  return Image.memory(record["imageBytes"], width: 45, height: 45, fit: BoxFit.cover);
+                                  } else if (record["imagePath"] != null) {
+                                    return Image.file(File(record["imagePath"]), width: 45, height: 45, fit: BoxFit.cover);
+                                    }
+                                    return const SizedBox.shrink();
+                                    }(),
+                                     )
+                                     ]
                       ],
                     ),
                   ),
