@@ -103,7 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
- // ✉️ 실제 회원가입 실행 (효진님의 기존 유효성 검사 및 닉네임 저장 100% 완벽 유지!)
+ // ✉️ 실제 회원가입 실행 
   Future<void> _handleSignUp() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -149,40 +149,40 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _supabase.auth.signOut();
       // 4. Supabase 회원가입 요청
       final response = await _supabase.auth.signUp(
         email: email,
         password: password,
         data: {
           'nickname': nickname,
-          'preferred_emotions': _selectedEmotions.toList(), // 선택한 주 감정 배열도 메타데이터에 함께 저장
+          'preferred_emotions': _selectedEmotions.toList(),
         },
       );
 
-      // 5. 🛑 이메일 중복 가입 방지 이중 필터링
+      // 5. ⭐ [바로 이 기능!] 이미 가입되어 있는 이메일인지 2차로 확인하는 철벽 방어선
       if (response.user != null && response.user!.identities != null && response.user!.identities!.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('이미 가입된 이메일 주소입니다. 로그인을 이용해 주세요!')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('이미 가입된 이메일 주소입니다. 로그인을 이용해 주세요!')),
+          );
+        }
         setState(() => _isLoading = false);
-        return;
+        return; // ❌ 이미 가입된 이메일이므로 여기서 딱 끊고 가입을 취소시킵니다.
       }
 
+      // 🟢 위 조건문(중복 이메일)에 걸리지 않은 '진짜 새 가입자'만 이 아래로 내려옵니다.
       await _supabase.auth.signOut();
 
-      // 입력 폼 초기화 (보안 방어)
       _nicknameController.clear();
       _emailController.clear();
       _passwordController.clear();
       _confirmPasswordController.clear();
       _selectedEmotions.clear();
 
-      // 다이얼로그나 스낵바로 사용자에게 메일함 확인 가이드 제공
       if (mounted) {
         showDialog(
           context: context,
-          barrierDismissible: false, // 외부 클릭으로 닫기 방지
+          barrierDismissible: false, 
           builder: (context) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text('✉️ 인증 메일 발송 완료', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF3C2612))),
@@ -190,10 +190,8 @@ class _LoginScreenState extends State<LoginScreen> {
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context); // 팝업 닫기
-                  setState(() {
-                    _currentStep = 3; // 🎯 곧바로 로그인 화면으로 안전하게 튕겨내기!
-                  });
+                  Navigator.pop(context);
+                  setState(() { _currentStep = 3; }); // 로그인 화면으로 이동
                 },
                 child: const Text('확인', style: TextStyle(color: Color(0xFFDCA842), fontWeight: FontWeight.bold)),
               )

@@ -640,15 +640,18 @@ class _HomeScreenState extends State<HomeScreen> {
     var targetFeed = _dailyTimelineFeeds[targetKey]![index];
 
     try {
-      // 💡 Supabase의 강력한 'upsert' 연산 가동: user_id를 누락 없이 꽉 채워 던집니다!
+      // 🚀 [수정 핵심]: DB 컬럼에 이미지 URL 주소를 확실하게 매핑하여 던집니다!
       await _supabase.from('diary_entries').upsert({
         'id': targetFeed['id'],
-        'user_id': userId,           // 🟢 [버그 완전 종결] 드디어 디비 빈칸에 진짜 내 UUID가 들어갑니다!
+        'user_id': userId,          
         'diary_date': targetKey,
         'diary_time': targetFeed['time'],
         'text': targetFeed['text'],
         'emoji': targetFeed['emoji'],
-        'emotions': targetFeed['emotions'], // JSONB 형태로 객체 데이터 자동 직렬화 적재
+        'emotions': targetFeed['emotions'], 
+        
+        // 🟢 [버그 종결 조치]: 그동안 빠져있던 image_url 자리에 targetFeed['imagePath']를 꽉 채워 던집니다!
+        'image_url': targetFeed['imagePath'], 
       });
 
       setState(() {
