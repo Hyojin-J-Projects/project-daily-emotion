@@ -97,12 +97,27 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, Map<String, double>> _dailyEmotionDatabase = {};
   final Map<String, String> _calendarEmojiMap = {};
 
+  // 🎯 1. 정확한 위치에 안착한 initState
+  @override
+  void initState() {
+    super.initState();
+    // 메인 화면이 딱 켜지는 순간, 새로 로그인한 유저의 일기장을 원격 DB에서 자동으로 동기화합니다.
+    _fetchDiariesFromSupabase();
+  }
+
+  // 🎯 2. 깨끗하게 이어지는 로그아웃 함수
   Future<void> _handleLogout() async {
     try {
-      // Supabase 서버 세션 종료
+      setState(() {
+        _dailyTimelineFeeds.clear();
+        _dailyEmotionDatabase.clear();
+        _calendarEmojiMap.clear();
+        _diaryController.clear();
+        _selectedImage = null;
+      });
+
       await Supabase.instance.client.auth.signOut();
       
-      // 로그인 첫 화면으로 튕겨내기
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -115,15 +130,15 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
+
+  // 🎯 3. 데이터 패치 함수
   Future<void> _fetchDiariesFromSupabase() async {
-    // 현재 로그인한 유저 고유 ID 가져오기
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) return;
 
     setState(() => _isLoading = true);
 
     try {
-      // 🌟 .eq('user_id', userId) 를 붙여서 '내 계정 일기만' 쏙 필터링합니다!
       final response = await Supabase.instance.client
           .from('diaries')
           .select()
@@ -131,7 +146,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (response != null && response is List) {
         setState(() {
-          // 주머니 초기화 후 데이터 채워넣기
           _dailyTimelineFeeds.clear();
           _dailyEmotionDatabase.clear();
           _calendarEmojiMap.clear();
@@ -140,15 +154,13 @@ class _HomeScreenState extends State<HomeScreen> {
             String dateStr = item['date'] ?? '';
             if (dateStr.isEmpty) continue;
 
-            // 로컬 화면 주머니 데이터 구조에 맞게 매핑
             _dailyTimelineFeeds[dateStr] = [
               {
                 'text': item['content'] ?? '',
                 'emotion': item['emotion'] ?? '일상',
-                'image': item['image_url'], // 이미지 경로가 있다면 추가
+                'image': item['image_url'],
               }
             ];
-
           }
         });
       }
@@ -275,12 +287,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // 단일 Supabase 클라이언트 단말 참조 인스턴스 생성
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  @override
-  void initState() {
-    super.initState();
-    // 📡 앱 부팅 시 오늘 자 날짜 데이터를 백엔드 데이터베이스로부터 원격 소싱(Fetch)해옵니다.
-    _fetchDiaryEntriesFromSupabase();
-  }
 
   String _getDateKey(DateTime date) {
     return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
@@ -814,7 +820,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 6),
                     Text(_dominantEmotion, style: const TextStyle(color: Color(0xFF451A03), fontSize: 36, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 4),
-                    const Text('하루 모든 조절 데이터의 평균 결합값이 실시간 반영됩니다.', style: TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w600)),
                     // 💡 소프트랩(wrap)이 되도록 maxLines와 overflow 속성을 주면 모바일에서 안 깨집니다.
                     const Text(
                       '하루 모든 조절 데이터의 평균 결합값이 실시간 반영됩니다.', 
