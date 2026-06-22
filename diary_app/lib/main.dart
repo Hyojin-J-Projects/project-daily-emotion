@@ -97,27 +97,12 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, Map<String, double>> _dailyEmotionDatabase = {};
   final Map<String, String> _calendarEmojiMap = {};
 
-  // 🎯 1. 정확한 위치에 안착한 initState
-  @override
-  void initState() {
-    super.initState();
-    // 메인 화면이 딱 켜지는 순간, 새로 로그인한 유저의 일기장을 원격 DB에서 자동으로 동기화합니다.
-    _fetchDiariesFromSupabase();
-  }
-
-  // 🎯 2. 깨끗하게 이어지는 로그아웃 함수
   Future<void> _handleLogout() async {
     try {
-      setState(() {
-        _dailyTimelineFeeds.clear();
-        _dailyEmotionDatabase.clear();
-        _calendarEmojiMap.clear();
-        _diaryController.clear();
-        _selectedImage = null;
-      });
-
+      // Supabase 서버 세션 종료
       await Supabase.instance.client.auth.signOut();
       
+      // 로그인 첫 화면으로 튕겨내기
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -130,15 +115,15 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
-
-  // 🎯 3. 데이터 패치 함수
   Future<void> _fetchDiariesFromSupabase() async {
+    // 현재 로그인한 유저 고유 ID 가져오기
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) return;
 
     setState(() => _isLoading = true);
 
     try {
+      // 🌟 .eq('user_id', userId) 를 붙여서 '내 계정 일기만' 쏙 필터링합니다!
       final response = await Supabase.instance.client
           .from('diaries')
           .select()
@@ -146,6 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (response != null && response is List) {
         setState(() {
+          // 주머니 초기화 후 데이터 채워넣기
           _dailyTimelineFeeds.clear();
           _dailyEmotionDatabase.clear();
           _calendarEmojiMap.clear();
@@ -154,13 +140,15 @@ class _HomeScreenState extends State<HomeScreen> {
             String dateStr = item['date'] ?? '';
             if (dateStr.isEmpty) continue;
 
+            // 로컬 화면 주머니 데이터 구조에 맞게 매핑
             _dailyTimelineFeeds[dateStr] = [
               {
                 'text': item['content'] ?? '',
                 'emotion': item['emotion'] ?? '일상',
-                'image': item['image_url'],
+                'image': item['image_url'], // 이미지 경로가 있다면 추가
               }
             ];
+
           }
         });
       }
@@ -287,6 +275,12 @@ class _HomeScreenState extends State<HomeScreen> {
   // 단일 Supabase 클라이언트 단말 참조 인스턴스 생성
   final SupabaseClient _supabase = Supabase.instance.client;
 
+  @override
+  void initState() {
+    super.initState();
+    // 📡 앱 부팅 시 오늘 자 날짜 데이터를 백엔드 데이터베이스로부터 원격 소싱(Fetch)해옵니다.
+    _fetchDiaryEntriesFromSupabase();
+  }
 
   String _getDateKey(DateTime date) {
     return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
@@ -297,10 +291,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return "${date.year}년 ${date.month}월 ${date.day}일 ${weekdayStr}요일";
   }
 
-  // 📡 [Supabase 연동 핵심]: 원격 데이터베이스로부터 내 계정의 시계열 일기 피드만 동적 로드하는 엔진
+  // 📡 [Supabase 연동]: 원격 데이터베이스로부터 내 계정의 시계열 일기 피드만 동적 로드하는 엔진
   Future<void> _fetchDiaryEntriesFromSupabase() async {
     try {
-      // 🌟 [핵심 안전장치] 현재 로그인한 사용자의 진짜 고유 ID(UUID)를 가져옵니다.
       final client = Supabase.instance.client;
       String? userId = client.auth.currentUser?.id ?? client.auth.currentSession?.user.id;
 
@@ -309,11 +302,10 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      // 🚀 [.eq('user_id', userId)] 조건을 추가하여 내 일기만 쏙 솎아내어 정렬합니다!
-      final List<dynamic> response = await _supabase
+      final List<dynamic> response = await client
           .from('diary_entries')
           .select()
-          .eq('user_id', userId) // 🟢 [데이터 복구 핵심 필터] 내 UUID와 일치하는 장부만 필터링!
+          .eq('user_id', userId) 
           .order('created_at', ascending: false);
 
       setState(() {
@@ -328,10 +320,12 @@ class _HomeScreenState extends State<HomeScreen> {
             _dailyTimelineFeeds[dateKey] = [];
           }
 
-          // JSON 타입의 수치를 Map<String, double> 구조로 파싱 변환
           Map<String, dynamic> rawEmotions = row['emotions'] ?? {};
           Map<String, double> parsedEmotions = {};
           rawEmotions.forEach((k, v) => parsedEmotions[k] = (v as num).toDouble());
+
+          // 🟢 변수 선언 위치를 확실하게 잡아 에러를 해결합니다.
+          String? dbImagePath = row['image_url']; 
 
           _dailyTimelineFeeds[dateKey]!.add({
             "id": row['id'],
@@ -339,14 +333,13 @@ class _HomeScreenState extends State<HomeScreen> {
             "text": row['text'],
             "emoji": row['emoji'],
             "emotions": parsedEmotions,
-            "imageBytes": null, // 스토리지 주소 연동 전 프리셋용 공백값
-            "imagePath": null
+            "imageBytes": null, 
+            "imagePath": dbImagePath // 🎯 에러 해결 및 정상 매핑
           });
         }
 
-        // 전체 데이터 주머니 순회하며 일일 합산 평균 통계 재계산 가동
         _dailyTimelineFeeds.keys.forEach((dateKey) {
-          _recalculateDailyDatabase(dateKey); // 🌟 200번대에 살아있는 공용 계산 엔진 가동
+          _recalculateDailyDatabase(dateKey); 
         });
       });
       
@@ -355,6 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
       print("⚠️ Supabase 데이터 초기 로드 실패: $e");
     }
   }
+
 
   int _calculateStreak(DateTime baseDate) {
     int streak = 0;
@@ -503,6 +497,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 200) {
         final Map<String, dynamic> result = jsonDecode(utf8.decode(response.bodyBytes));
 
+        String? serverSideImageUrl = result["image_url"];
+
         setState(() {
           String targetKey = _getDateKey(_selectedDay);
           
@@ -537,7 +533,7 @@ class _HomeScreenState extends State<HomeScreen> {
             "time": timeStr,
             "text": text.isNotEmpty ? text : "사진 AI 멀티모달 오리지널 분석 기록",
             "emoji": _emojiTable[highest]!,
-            "imagePath": _selectedImage?.path,
+            "imagePath": serverSideImageUrl ?? _selectedImage?.path,
             "imageBytes": imageBytes,
             "emotions": Map<String, double>.from(_editingSliders)
           });
@@ -810,37 +806,30 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(titleLabel, style: const TextStyle(color: Color(0xFF78350F), fontSize: 13, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text(_dominantEmotion, style: const TextStyle(color: Color(0xFF451A03), fontSize: 36, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 4),
-                    // 💡 소프트랩(wrap)이 되도록 maxLines와 overflow 속성을 주면 모바일에서 안 깨집니다.
-                    const Text(
-                      '하루 모든 조절 데이터의 평균 결합값이 실시간 반영됩니다.', 
-                      style: TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w600),
-                      maxLines: 2,
-                    ),
-                 ],
-               ),
-             ),
-             const SizedBox(width: 12), // 텍스트와 이모티콘 사이 최소 간격 확보
-             Text(_dominantEmoji, style: const TextStyle(fontSize: 68)), // 🎯 이제 제자리를 지킵니다!
-           ],
-         ),  
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('종합 감정 점수 비율', style: TextStyle(color: Color(0xFF78350F), fontSize: 12, fontWeight: FontWeight.bold)),
-              Text('${_dominantValue.toInt()}%', style: const TextStyle(color: Color(0xFF451A03), fontSize: 12, fontWeight: FontWeight.w900)),
-            ],
-          ),
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded( // 👈 1. 왼쪽 텍스트 영역이 차지할 수 있는 가로 폭을 제한합니다.
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titleLabel, style: const TextStyle(color: Color(0xFF78350F), fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Text(_dominantEmotion, style: const TextStyle(color: Color(0xFF451A03), fontSize: 36, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  // 💡 2. 긴 텍스트가 화면 밖으로 탈출하지 못하도록 maxLines와 overflow 속성을 추가합니다.
+                  Text(
+                    '하루 모든 조절 데이터의 평균 결합값이 실시간 반영됩니다.', 
+                    style: const TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w600),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12), // 👈 3. 텍스트와 이모티콘 사이의 최소 간격 확보
+            Text(_dominantEmoji, style: const TextStyle(fontSize: 68)), // 🎯 이제 이모티콘이 제자리를 지킵니다!
+          ],
+        ),
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
@@ -1047,10 +1036,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     setState(() {
                       _editingFeedId = record["id"];
                       _diaryController.text = record["text"];
-                      Map<String, double> storedEmotions = Map<String, double>.from(record["emotions"]);
+                      Map<String, double> storedEmotions = Map<String, double>.from(record["emotions"] ?? {});
                       storedEmotions.forEach((k, v) {
                         _editingSliders[k] = v;
-                        emotionMetrics[k]!['value'] = v;
+                      });
+                      storedEmotions.forEach((key, value) {
+                        if (emotionMetrics.containsKey(key)) {
+                          // 기존 Map의 내부 값을 바꾸는 대신, 새롭게 구성한 Map 객체를 통째로 덮어씌워 렌더링을 강제 트리거합니다.
+                          emotionMetrics[key] = {
+                            "emoji": emotionMetrics[key]!["emoji"],
+                            "value": value,
+                            "color": emotionMetrics[key]!["color"],
+                          };
+                        }
                       });
                     });
                   },
@@ -1076,25 +1074,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                         ),
-                        if (record["imageUrl"] != null || record["imageBytes"] != null || record["imagePath"] != null) ...[
+                        if (record["imageBytes"] != null || record["imagePath"] != null) ...[
                           const SizedBox(width: 10),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: () {
-                              // 1순위: Supabase DB에서 내려준 클라우드 이미지 주소가 있다면 네트워크 이미지로 출력!
-                              if (record["imageUrl"] != null && record["imageUrl"].toString().isNotEmpty) {
-                                return Image.network(record["imageUrl"], width: 45, height: 45, fit: BoxFit.cover);
-                                }
-                                // 2순위: 방금 분석 요청해서 서버에 올라가기 직전인 로컬 임시 데이터 출력
-                                if (kIsWeb && record["imageBytes"] != null) {
-                                  return Image.memory(record["imageBytes"], width: 45, height: 45, fit: BoxFit.cover);
-                                  } else if (record["imagePath"] != null) {
-                                    return Image.file(File(record["imagePath"]), width: 45, height: 45, fit: BoxFit.cover);
-                                    }
-                                    return const SizedBox.shrink();
-                                    }(),
-                                     )
-                                     ]
+                            child: kIsWeb 
+                              ? Image.memory(record["imageBytes"], width: 45, height: 45, fit: BoxFit.cover)
+                              : Image.file(File(record["imagePath"]), width: 45, height: 45, fit: BoxFit.cover),
+                          )
+                        ]
                       ],
                     ),
                   ),

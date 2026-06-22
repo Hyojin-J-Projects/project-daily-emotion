@@ -149,11 +149,15 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
+      await _supabase.auth.signOut();
       // 4. Supabase 회원가입 요청
       final response = await _supabase.auth.signUp(
         email: email,
         password: password,
-        data: {'nickname': nickname},
+        data: {
+          'nickname': nickname,
+          'preferred_emotions': _selectedEmotions.toList(), // 선택한 주 감정 배열도 메타데이터에 함께 저장
+        },
       );
 
       // 5. 🛑 이메일 중복 가입 방지 이중 필터링
@@ -165,11 +169,38 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('🎉 무드록 회원가입 성공! 메인 화면으로 이동합니다.')),
-      );
-      _navigateToHome();
+      await _supabase.auth.signOut();
 
+      // 입력 폼 초기화 (보안 방어)
+      _nicknameController.clear();
+      _emailController.clear();
+      _passwordController.clear();
+      _confirmPasswordController.clear();
+      _selectedEmotions.clear();
+
+      // 다이얼로그나 스낵바로 사용자에게 메일함 확인 가이드 제공
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false, // 외부 클릭으로 닫기 방지
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('✉️ 인증 메일 발송 완료', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF3C2612))),
+            content: Text('$email 주소로 가입 확인 메일이 전송되었습니다.\n\n메일 안의 링크를 클릭해 주셔야 로그인이 가능합니다! 🌻'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context); // 팝업 닫기
+                  setState(() {
+                    _currentStep = 3; // 🎯 곧바로 로그인 화면으로 안전하게 튕겨내기!
+                  });
+                },
+                child: const Text('확인', style: TextStyle(color: Color(0xFFDCA842), fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
+        );
+      }
     } catch (e) {
       String errorMessage = '가입 실패: $e';
       if (e.toString().contains('already exists')) {
@@ -189,10 +220,19 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() => _isLoading = true);
     try {
-      await _supabase.auth.signInWithPassword(
+      final authResponse = await _supabase.auth.signInWithPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
+      // 🎯 [여기서부터 5줄 추가!] 이메일 인증 완료 날짜가 찍혀있는지 확인합니다.
+      final isEmailConfirmed = authResponse.user?.emailConfirmedAt != null;
+      if (!isEmailConfirmed) {
+        // 인증을 안 한 유저라면 로그인 세션을 즉시 파기(강제 로그아웃)하고 입장을 막습니다.
+        await _supabase.auth.signOut();
+        throw '이메일 인증이 완료되지 않았습니다. 메일함을 확인해 주세요!';
+      }
+
+      // 2. 인증이 통과된 정상 유저만 홈 화면으로 들여보냅니다.
       _navigateToHome();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('로그인 실패: $e')));
